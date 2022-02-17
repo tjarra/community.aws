@@ -1,0 +1,71 @@
+# Test - Try Create Nodegroup in non existent EKS
+- name: attempt to create fargate profile in non existent eks
+  aws_eks_fargate_profile:
+    name: '{{ eks_nodegroup_name_a }}'
+    state: present
+    cluster_name: fake_cluster
+    node_role: '{{ role }}'
+    subnets: >-
+      {{setup_subnets.results|selectattr('subnet.tags.Name', 'contains',
+      'private') | map(attribute='subnet.id') }}
+    scaling_config:
+      - min_size: 1
+      - max_size: 2
+      - desire_size: 1
+    disk_size: 20
+    instance_types:
+    ami_type: 'AL2_x86_64'
+    remote_access:
+      - ec2_ssh_key: 'teste'
+      - source_sg: ''
+    update_config:
+      - max_unavailable: 1
+      - max_unavailabel_percentage: 50
+    labels:
+      - 'teste': 'teste'
+    taints:
+      - key: 'teste'
+        value: 'teste'
+        effect: 'NO_SCHEDULE'
+    capacity_type: 'on_demand'
+  register: aws_eks_non_existent_eks
+  ignore_errors: 'yes'
+
+- name: check that aws_eks_nodegroup did nothing
+  assert:
+    that:
+      - aws_eks_non_existent_eks is failed
+      - '"msg" in aws_eks_non_existent_eks'
+
+#########################################################
+- name: create nodegroup witn minimum parameters
+  aws_eks_fargate_profile:
+    name: '{{ eks_nodegroup_name_a }}'
+    state: present
+    cluster_name: fake_cluster
+    node_role: '{{ role }}'
+    subnets: >-
+      {{setup_subnets.results|selectattr('subnet.tags.Name', 'contains',
+      'private') | map(attribute='subnet.id') }}
+    scaling_config:
+      - min_size: 1
+      - max_size: 2
+      - desire_size: 1
+    disk_size: 20
+    instance_types: 't3.micro'
+    ami_type: 'AL2_x86_64'
+    labels:
+      - 'teste': 'teste'
+    taints:
+      - key: 'teste'
+        value: 'teste'
+        effect: 'NO_SCHEDULE'
+    capacity_type: 'on_demand'
+  register: aws_eks_non_existent_eks
+  ignore_errors: 'yes'
+
+- name: check that aws_eks_nodegroup did nothing
+  assert:
+    that:
+      - aws_eks_non_existent_eks is failed
+      - '"msg" in aws_eks_non_existent_eks'
