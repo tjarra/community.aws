@@ -1,5 +1,5 @@
 # Test - Try Create Nodegroup in non existent EKS
-- name: attempt to create fargate profile in non existent eks
+- name: attempt to create Nodegroup in non existent eks
   aws_eks_fargate_profile:
     name: '{{ eks_nodegroup_name_a }}'
     state: present
@@ -15,9 +15,6 @@
     disk_size: 20
     instance_types:
     ami_type: 'AL2_x86_64'
-    remote_access:
-      - ec2_ssh_key: 'teste'
-      - source_sg: ''
     update_config:
       - max_unavailable: 1
       - max_unavailabel_percentage: 50
