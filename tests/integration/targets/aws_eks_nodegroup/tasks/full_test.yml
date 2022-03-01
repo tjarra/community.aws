@@ -1,25 +1,24 @@
 # Test - Try Create Nodegroup in non existent EKS
 - name: attempt to create Nodegroup in non existent eks
-  aws_eks_fargate_profile:
+  aws_eks_nodegroup:
     name: '{{ eks_nodegroup_name_a }}'
     state: present
     cluster_name: fake_cluster
-    node_role: '{{ role }}'
+    node_role: '{{ node_role }}'
     subnets: >-
       {{setup_subnets.results|selectattr('subnet.tags.Name', 'contains',
       'private') | map(attribute='subnet.id') }}
     scaling_config:
-      - min_size: 1
-      - max_size: 2
-      - desire_size: 1
+      min_size: 1
+      max_size: 2
+      desired_size: 1
     disk_size: 20
-    instance_types:
+    instance_types: 't3.micro'
     ami_type: 'AL2_x86_64'
     update_config:
-      - max_unavailable: 1
-      - max_unavailabel_percentage: 50
+      max_unavailable_percentage: 50
     labels:
-      - 'teste': 'teste'
+      'teste': 'teste'
     taints:
       - key: 'teste'
         value: 'teste'
@@ -36,33 +35,46 @@
 
 #########################################################
 - name: create nodegroup witn minimum parameters
-  aws_eks_fargate_profile:
+  aws_eks_nodegroup:
     name: '{{ eks_nodegroup_name_a }}'
     state: present
-    cluster_name: fake_cluster
-    node_role: '{{ role }}'
+    cluster_name: '{{ eks_cluster_name }}'
+    node_role: '{{ node_role }}'
     subnets: >-
       {{setup_subnets.results|selectattr('subnet.tags.Name', 'contains',
       'private') | map(attribute='subnet.id') }}
     scaling_config:
-      - min_size: 1
-      - max_size: 2
-      - desire_size: 1
+      min_size: 1
+      max_size: 2
+      desired_size: 1
     disk_size: 20
     instance_types: 't3.micro'
     ami_type: 'AL2_x86_64'
+    update_config:
+      max_unavailable: 1
     labels:
-      - 'teste': 'teste'
+      'teste': 'teste'
     taints:
       - key: 'teste'
         value: 'teste'
         effect: 'NO_SCHEDULE'
     capacity_type: 'on_demand'
+    wait: True
   register: aws_eks_non_existent_eks
-  ignore_errors: 'yes'
 
-- name: check that aws_eks_nodegroup did nothing
+- name: check that aws_eks_nodegroup is created
   assert:
     that:
-      - aws_eks_non_existent_eks is failed
-      - '"msg" in aws_eks_non_existent_eks'
+      - aws_eks_non_existent_eks is changed
+
+- name: delete nodegroup
+  aws_eks_nodegroup:
+    name: '{{ eks_nodegroup_name_a }}'
+    state: absent
+    cluster_name: '{{ eks_cluster_name }}'
+  register: aws_eks_delete_nodegroup
+
+- name: check that aws_eks_nodegroup is deleted
+  assert:
+    that:
+      - aws_eks_non_existent_eks is changed

@@ -9,7 +9,7 @@ __metaclass__ = type
 DOCUMENTATION = r'''
 ---
 module: aws_eks_nodegroup
-version_added: 1.0.0
+version_added: 3.2.0
 short_description: Manage EKS Nodegroup
 description:
     - Manage EKS Nodegroup
@@ -162,17 +162,17 @@ EXAMPLES = r'''
 '''
 
 RETURN = r'''
-nodegroupName:
+nodegroup_name:
   description: The name associated with an Amazon EKS managed node group.
   returned: when state is present
   type: str
   sample: test_profile
-nodegroupArn:
+nodegroup_arn:
   description: The Amazon Resource Name (ARN) associated with the managed node group.
   returned: when state is present
   type: str
   sample: arn:aws:eks:us-east-1:1231231123:safd
-clusterName:
+cluster_name:
   description: Name of EKS Cluster
   returned: when state is present
   type: str
@@ -182,7 +182,7 @@ version:
   returned: when state is present
   type: str
   sample: need_validate
-releaseVersion:
+release_version:
   description: This is the version of the Amazon EKS optimized AMI that the node group was deployed with
   returned: when state is present
   type: str
@@ -192,7 +192,7 @@ created_at:
   returned: when state is present
   type: str
   sample: '2022-01-18T20:00:00.111000+00:00'
-modifiedAt:
+modified_at:
   description: Nodegroup modified date and time
   returned: when state is present
   type: str
@@ -204,17 +204,17 @@ status:
   sample:
   - CREATING
   - ACTIVE
-capacityType:
+capacity_type:
   description: The capacity type of your managed node group.
   returned: when state is present
   type: str
   sample: need_validate
-scalingConfig:
+scaling_config:
   description: The scaling configuration details for the Auto Scaling group that is associated with your node group.
   returned: when state is present
   type: dict
   sample: need_validate
-instanceTypes:
+instance_types:
   description: This is the instance type that is associated with the node group.
   returned: when state is present
   type: list
@@ -226,17 +226,17 @@ subnets:
   sample:
   - subnet-qwerty123
   - subnet-asdfg456
-remoteAccess:
+remote_access:
   description: This is the remote access configuration that is associated with the node group.
   returned: when state is present
   type: dict
   sample: need_validate
-amiType:
+ami_type:
   description: This is the AMI type that was specified in the node group configuration.
   returned: when state is present
   type: str
   sample: need_validate
-nodeRole:
+node_role:
   description: ARN of the IAM Role used by Nodegroup
   returned: when state is present
   type: str
@@ -275,7 +275,7 @@ health:
   returned: when state is present
   type: dict
   sample: need_validate
-updateConfig:
+update_config:
   description: The node group update configuration.
   returned: when state is present
   type: dict
@@ -286,7 +286,7 @@ updateConfig:
     maxUnavailablePercentage:
       description: The maximum percentage of nodes unavailable during a version update.
       type: int
-lauchTemplate:
+lauch_template:
   description: If a launch template was used to create the node group, then this is the launch template that was used.
   returned: when state is present
   type: dict
@@ -301,7 +301,7 @@ tags:
 
 from ansible_collections.amazon.aws.plugins.module_utils.core import AnsibleAWSModule, is_boto3_error_code
 from ansible_collections.amazon.aws.plugins.module_utils.ec2 import compare_aws_tags
-from ansible_collections.amazon.aws.plugins.module_utils.ec2 import camel_dict_to_snake_dict
+from ansible_collections.amazon.aws.plugins.module_utils.ec2 import camel_dict_to_snake_dict, snake_dict_to_camel_dict
 from ansible_collections.amazon.aws.plugins.module_utils.waiters import get_waiter
 
 try:
@@ -410,31 +410,35 @@ def create_or_update_nodegroups(client, module):
 
     changed = False
     params = dict()
-    params['nodegroupName'] = module.params.get['name']
+    params['nodegroupName'] = module.params['name']
     params['clusterName'] = module.params['cluster_name']
-    params['nodeRole'] = module.params['role_arn']
+    params['nodeRole'] = module.params['node_role']
     params['subnets'] = module.params['subnets']
 
     # this configurations is to use default AMI in AWS, this module not prepare to lauch templates
     params['amiType'] = module.params['ami_type']
     params['diskSize'] = module.params['disk_size']
     params['instanceTypes'] = module.params['instance_types']
-    params['releaseVersion'] = module.params['release_version']
-    ##
+    if module.params['release_version'] is not None:
+        params['releaseVersion'] = module.params['release_version']
     if module.params['remote_access'] is not None:
         params['remoteAccess'] = module.params['remote_access']
     if module.params['tags'] is not None:
         params['tags'] = module.params['tags']
     if module.params['capacity_type'] is not None:
-        params['capacityType'] = module.params['capacity_type']
+        params['capacityType'] = module.params['capacity_type'].upper()
     if module.params['labels'] is not None:
         params['labels'] = module.params['labels']
     if module.params['taints'] is not None:
         params['taints'] = module.params['taints']
     if module.params['update_config'] is not None:
-        params['updateConfig'] = module.params['update_config']
+        params['updateConfig'] = dict()
+        if module.params['update_config']['max_unavailable'] is not None:
+            params['updateConfig']['maxUnavailable'] = module.params['update_config']['max_unavailable']
+        if module.params['update_config']['max_unavailable_percentage'] is not None:
+            params['updateConfig']['maxUnavailablePercentage'] = module.params['update_config']['max_unavailable_percentage']
     if module.params['scaling_config'] is not None:
-        params['scalingConfig'] = module.params['scaling_config']
+        params['scalingConfig'] = snake_dict_to_camel_dict(module.params['scaling_config'])
 
     wait = module.params.get('wait')
     nodegroup = get_nodegroup(client, module, params['nodegroupName'], params['clusterName'])
@@ -555,7 +559,7 @@ def main():
         scaling_config=dict(type='dict', options=dict(
             min_size=dict(type='int'),
             max_size=dict(type='int'),
-            desire_size=dict(type='int')
+            desired_size=dict(type='int')
         )),
         disk_size=dict(type='int'),
         instance_types=dict(type='list', elements='str'),
@@ -581,7 +585,7 @@ def main():
 
     module = AnsibleAWSModule(
         argument_spec=argument_spec,
-        required_if=[['state', 'present', ['name', 'cluster_name', 'node_role', 'subnets', 'scaling_config', 'disk_size', 'instance_types', 'ami_type']]],
+        required_if=[['state', 'present', ['node_role', 'subnets', 'scaling_config', 'disk_size', 'instance_types', 'ami_type']]],
         supports_check_mode=True,
     )
 
