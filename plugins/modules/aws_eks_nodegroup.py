@@ -415,10 +415,14 @@ def create_or_update_nodegroups(client, module):
     params['nodeRole'] = module.params['node_role']
     params['subnets'] = module.params['subnets']
 
-    # this configurations is to use default AMI in AWS, this module not prepare to lauch templates
-    params['amiType'] = module.params['ami_type']
-    params['diskSize'] = module.params['disk_size']
-    params['instanceTypes'] = module.params['instance_types']
+    if module.params['ami_type'] is not None:
+       params['amiType'] = module.params['ami_type']
+    if module.params['disk_size'] is not None:
+        params['diskSize'] = module.params['disk_size']
+    if module.params['instance_types'] is not None:
+        params['instanceTypes'] = module.params['instance_types']
+    if module.params['launch_template'] is not None:
+        params['launch_template'] = module.params['launch_template']
     if module.params['release_version'] is not None:
         params['releaseVersion'] = module.params['release_version']
     if module.params['remote_access'] is not None:
@@ -442,12 +446,6 @@ def create_or_update_nodegroups(client, module):
 
     wait = module.params.get('wait')
     nodegroup = get_nodegroup(client, module, params['nodegroupName'], params['clusterName'])
-
-    try:
-        ec2 = module.client('ec2')
-        vpc_id = ec2.describe_subnets(SubnetIds=[params['subnets'][0]])['Subnets'][0]['VpcId']
-    except (botocore.exceptions.BotoCoreError, botocore.exceptions.ClientError) as e:
-        module.fail_json_aws(e, msg="Couldn't not find subnets")
 
     if nodegroup:
 
@@ -509,6 +507,8 @@ def compare_params(client, module, params, nodegroup):
         module.fail_json(msg="Cannot modify capacity type")
     if nodegroup['releaseVersion'] != params['releaseVersion']:
         module.fail_json(msg="Cannot modify release version")
+    if nodegroup['launch_template'] != params['launch_template']:
+        module.fail_json(msg="Cannot modify Launch template configuration")
     ###
     if nodegroup['updateConfig'] != params['updateConfig']:
         return True
@@ -538,7 +538,7 @@ def delete_nodegroups(client, module):
 
 def get_nodegroup(client, module, nodegroup_name, cluster_name):
     try:
-        return client.describe_nodegroup(clusterName=cluster_name, nodegroupName=nodegroup_name)['nodegrouop']
+        return client.describe_nodegroup(clusterName=cluster_name, nodegroupName=nodegroup_name)['nodegroup']
     except is_boto3_error_code('ResourceNotFoundException'):
         return None
 
@@ -574,6 +574,11 @@ def main():
         )),
         labels=dict(type='dict'),
         taints=dict(type='list', elements='dict'),
+        launch_template=dict(type='dict', options=dict(
+            name=dict(type='str'),
+            version=dict(type='str'),
+            id=dict(type='str')
+        )),
         capacity_type=dict(choices=['on_demand', 'spot'], default='on_demand'),
         release_version=dict(),
         tags=dict(type='dict', default={}),
@@ -585,7 +590,13 @@ def main():
 
     module = AnsibleAWSModule(
         argument_spec=argument_spec,
-        required_if=[['state', 'present', ['node_role', 'subnets', 'scaling_config', 'disk_size', 'instance_types', 'ami_type']]],
+        required_if=[['state', 'present', ['node_role', 'subnets']]],
+        mutually_exclusive=[
+          ('launch_template','instance_types'),
+          ('launch_template','disk_size'),
+          ('launch_template','remote_access'),
+          ("update_config['max_unavailable']","update_config['max_unavailable_percentage']")
+          ],
         supports_check_mode=True,
     )
 
