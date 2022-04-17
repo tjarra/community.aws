@@ -1,5 +1,5 @@
 # Test - Try Create Nodegroup in non existent EKS
-- name: attempt to create Nodegroup in non existent eks
+- name: Test - attempt to create Nodegroup in non existent eks
   aws_eks_nodegroup:
     name: '{{ eks_nodegroup_name_a }}'
     state: present
@@ -33,7 +33,48 @@
       - aws_eks_non_existent_eks is failed
       - '"msg" in aws_eks_non_existent_eks'
 
+# Test - Try Create Nodegroup with conflict
+
+- name: Test - attempt to create Nodegroup with conflict
+  aws_eks_nodegroup:
+    name: '{{ eks_nodegroup_name_a }}'
+    state: present
+    cluster_name: '{{ eks_cluster_name }}'
+    node_role: '{{ node_role }}'
+    subnets: >-
+      {{setup_subnets.results|selectattr('subnet.tags.Name', 'contains',
+      'private') | map(attribute='subnet.id') }}
+    wait: True
+    launch_template: 
+      id: 'lt-0824c69cafa69ac81'
+    disk_size: 30
+  register: aws_eks_node_conflict
+  ignore_errors: 'yes'
+
+- name: check that aws_eks_nodegroup did nothing
+  assert:
+    that:
+      - aws_eks_non_existent_eks is failed
+
 #########################################################
+- name: create nodegroup witn minimum parameters (check mode)
+  aws_eks_nodegroup:
+    name: '{{ eks_nodegroup_name_a }}'
+    state: present
+    cluster_name: '{{ eks_cluster_name }}'
+    node_role: '{{ node_role }}'
+    subnets: >-
+      {{setup_subnets.results|selectattr('subnet.tags.Name', 'contains',
+      'private') | map(attribute='subnet.id') }}
+    wait: True
+  register: aws_eks_non_existent_eks
+  check_mode: True
+
+- name: check that aws_eks_nodegroup is created (check mode)
+  assert:
+    that:
+      - aws_eks_non_existent_eks.changed
+
 - name: create nodegroup witn minimum parameters
   aws_eks_nodegroup:
     name: '{{ eks_nodegroup_name_a }}'
@@ -43,38 +84,381 @@
     subnets: >-
       {{setup_subnets.results|selectattr('subnet.tags.Name', 'contains',
       'private') | map(attribute='subnet.id') }}
-    scaling_config:
-      min_size: 1
-      max_size: 2
-      desired_size: 1
-    disk_size: 20
-    instance_types: 't3.micro'
-    ami_type: 'AL2_x86_64'
-    update_config:
-      max_unavailable: 1
-    labels:
-      'teste': 'teste'
-    taints:
-      - key: 'teste'
-        value: 'teste'
-        effect: 'NO_SCHEDULE'
-    capacity_type: 'on_demand'
     wait: True
   register: aws_eks_non_existent_eks
 
 - name: check that aws_eks_nodegroup is created
   assert:
     that:
-      - aws_eks_non_existent_eks is changed
+      - aws_eks_non_existent_eks.changed
 
-- name: delete nodegroup
+- name: create nodegroup witn minimum parameters (idempotency)(check mode)
+  aws_eks_nodegroup:
+    name: '{{ eks_nodegroup_name_a }}'
+    state: present
+    cluster_name: '{{ eks_cluster_name }}'
+    node_role: '{{ node_role }}'
+    subnets: >-
+      {{setup_subnets.results|selectattr('subnet.tags.Name', 'contains',
+      'private') | map(attribute='subnet.id') }}
+    wait: True
+  register: aws_eks_non_existent_eks
+  check_mode: True
+
+- name: check that aws_eks_nodegroup is not changed (idempotency)(check mode)
+  assert:
+    that:
+      - not aws_eks_non_existent_eks.changed
+
+- name: create nodegroup witn minimum parameters (idempotency)
+  aws_eks_nodegroup:
+    name: '{{ eks_nodegroup_name_a }}'
+    state: present
+    cluster_name: '{{ eks_cluster_name }}'
+    node_role: '{{ node_role }}'
+    subnets: >-
+      {{setup_subnets.results|selectattr('subnet.tags.Name', 'contains',
+      'private') | map(attribute='subnet.id') }}
+    wait: True
+  register: aws_eks_non_existent_eks
+  check_mode: True
+
+- name: check that aws_eks_nodegroup is not changed (idempotency)
+  assert:
+    that:
+      - not aws_eks_non_existent_eks.changed
+
+#########################################################
+## TRY UPDATE PARAMETERS
+
+- name: Test - attempt to update Nodegroup no permited parameter (disk_size)
+  aws_eks_nodegroup:
+    name: '{{ eks_nodegroup_name_a }}'
+    state: present
+    cluster_name: '{{ eks_cluster_name }}'
+    node_role: '{{ node_role }}'
+    subnets: >-
+      {{setup_subnets.results|selectattr('subnet.tags.Name', 'contains',
+      'private') | map(attribute='subnet.id') }}
+    wait: True
+    disk_size: 40
+  ignore_errors: 'yes'
+  register: aws_eks_non_existent_eks
+
+- name: check that aws_eks_nodegroup did nothing
+  assert:
+    that:
+      - aws_eks_non_existent_eks is failed
+
+- name: Test - attempt to update Nodegroup no permited parameter (disk_size)
+  aws_eks_nodegroup:
+    name: '{{ eks_nodegroup_name_a }}'
+    state: present
+    cluster_name: '{{ eks_cluster_name }}'
+    node_role: '{{ node_role }}'
+    subnets: >-
+      {{setup_subnets.results|selectattr('subnet.tags.Name', 'contains',
+      'private') | map(attribute='subnet.id') }}
+    wait: True
+    instance_types: ['t3.small']
+  ignore_errors: 'yes'
+  register: aws_eks_non_existent_eks
+
+- name: check that aws_eks_nodegroup did nothing
+  assert:
+    that:
+      - aws_eks_non_existent_eks is failed
+
+#########################################################
+## UPDATE ##
+
+- name: update nodegroup (check mode)
+  aws_eks_nodegroup:
+    name: '{{ eks_nodegroup_name_a }}'
+    state: present
+    cluster_name: '{{ eks_cluster_name }}'
+    node_role: '{{ node_role }}'
+    subnets: >-
+      {{setup_subnets.results|selectattr('subnet.tags.Name', 'contains',
+      'private') | map(attribute='subnet.id') }}
+    wait: True
+    scaling_config:
+      min_size: 1
+      max_size: 4
+      desired_size: 2
+    update_config:
+      max_unavailable_percentage: 50
+  register: aws_eks_non_existent_eks
+  check_mode: True
+
+- name: check that aws_eks_nodegroup is updated (check mode)
+  assert:
+    that:
+      - aws_eks_non_existent_eks.changed
+
+- name: update nodegroup
+  aws_eks_nodegroup:
+    name: '{{ eks_nodegroup_name_a }}'
+    state: present
+    cluster_name: '{{ eks_cluster_name }}'
+    node_role: '{{ node_role }}'
+    subnets: >-
+      {{setup_subnets.results|selectattr('subnet.tags.Name', 'contains',
+      'private') | map(attribute='subnet.id') }}
+    wait: True
+    scaling_config:
+      min_size: 1
+      max_size: 4
+      desired_size: 2
+    update_config:
+      max_unavailable_percentage: 50
+  register: aws_eks_non_existent_eks
+
+- name: check that aws_eks_nodegroup is updated
+  assert:
+    that:
+      - aws_eks_non_existent_eks.changed
+
+- name: update nodegroup (idempotency)(check mode)
+  aws_eks_nodegroup:
+    name: '{{ eks_nodegroup_name_a }}'
+    state: present
+    cluster_name: '{{ eks_cluster_name }}'
+    node_role: '{{ node_role }}'
+    subnets: >-
+      {{setup_subnets.results|selectattr('subnet.tags.Name', 'contains',
+      'private') | map(attribute='subnet.id') }}
+    wait: True
+    scaling_config:
+      min_size: 1
+      max_size: 4
+      desired_size: 2
+    update_config:
+      max_unavailable_percentage: 50
+  register: aws_eks_non_existent_eks
+  check_mode: True
+
+- name: check that aws_eks_nodegroup is not changed (idempotency)(check mode)
+  assert:
+    that:
+      - not aws_eks_non_existent_eks.changed
+
+- name: update nodegroup (idempotency)
+  aws_eks_nodegroup:
+    name: '{{ eks_nodegroup_name_a }}'
+    state: present
+    cluster_name: '{{ eks_cluster_name }}'
+    node_role: '{{ node_role }}'
+    subnets: >-
+      {{setup_subnets.results|selectattr('subnet.tags.Name', 'contains',
+      'private') | map(attribute='subnet.id') }}
+    wait: True
+    scaling_config:
+      min_size: 1
+      max_size: 4
+      desired_size: 2
+    update_config:
+      max_unavailable_percentage: 50
+  register: aws_eks_non_existent_eks
+  check_mode: True
+
+- name: check that aws_eks_nodegroup is not changed (idempotency)
+  assert:
+    that:
+      - not aws_eks_non_existent_eks.changed
+
+#########################################################
+## DELETE WITHOUT WAIT
+
+- name: delete nodegroup witn minimum parameters (check mode)
   aws_eks_nodegroup:
     name: '{{ eks_nodegroup_name_a }}'
     state: absent
     cluster_name: '{{ eks_cluster_name }}'
-  register: aws_eks_delete_nodegroup
+    node_role: '{{ node_role }}'
+  register: aws_eks_non_existent_eks
+  check_mode: True
+
+- name: check that aws_eks_nodegroup is delete (check mode)
+  assert:
+    that:
+      - aws_eks_non_existent_eks.changed
+
+- name: delete nodegroup witn minimum parameters
+  aws_eks_nodegroup:
+    name: '{{ eks_nodegroup_name_a }}'
+    state: absent
+    cluster_name: '{{ eks_cluster_name }}'
+  register: aws_eks_non_existent_eks
 
 - name: check that aws_eks_nodegroup is deleted
   assert:
     that:
-      - aws_eks_non_existent_eks is changed
+      - aws_eks_non_existent_eks.changed
+
+- name: delete nodegroup witn minimum parameters (idempotency)(check mode)
+  aws_eks_nodegroup:
+    name: '{{ eks_nodegroup_name_a }}'
+    state: absent
+    cluster_name: '{{ eks_cluster_name }}'
+  register: aws_eks_non_existent_eks
+  check_mode: True
+
+- name: check that aws_eks_nodegroup is not changed (idempotency)(check mode)
+  assert:
+    that:
+      - not aws_eks_non_existent_eks.changed
+
+- name: delete nodegroup witn minimum parameters (idempotency)
+  aws_eks_nodegroup:
+    name: '{{ eks_nodegroup_name_a }}'
+    state: absent
+    cluster_name: '{{ eks_cluster_name }}'
+  register: aws_eks_non_existent_eks
+  check_mode: True
+
+- name: check that aws_eks_nodegroup is not changed (idempotency)
+  assert:
+    that:
+      - not aws_eks_non_existent_eks.changed
+
+#########################################################
+## CREATE WITH LAUCH_TEMPLATE
+
+- name: create nodegroup with Lauch Template (check mode)
+  aws_eks_nodegroup:
+    name: '{{ eks_nodegroup_name_lt }}'
+    state: present
+    cluster_name: '{{ eks_cluster_name }}'
+    node_role: '{{ node_role }}'
+    subnets: >-
+      {{setup_subnets.results|selectattr('subnet.tags.Name', 'contains',
+      'private') | map(attribute='subnet.id') }}
+    launch_template:
+      name: 'Test-EKS-LT'
+    wait: True
+  register: aws_eks_non_existent_eks
+  check_mode: True
+
+- name: check that aws_eks_nodegroup is created (check mode)
+  assert:
+    that:
+      - aws_eks_non_existent_eks.changed
+
+- name: create nodegroup with Lauch Template
+  aws_eks_nodegroup:
+    name: '{{ eks_nodegroup_name_lt }}'
+    state: present
+    cluster_name: '{{ eks_cluster_name }}'
+    node_role: '{{ node_role }}'
+    subnets: >-
+      {{setup_subnets.results|selectattr('subnet.tags.Name', 'contains',
+      'private') | map(attribute='subnet.id') }}
+    launch_template:
+      name: 'Test-EKS-LT'
+    wait: True
+  register: aws_eks_non_existent_eks
+
+- name: check that aws_eks_nodegroup is created
+  assert:
+    that:
+      - aws_eks_non_existent_eks.changed
+
+- name: create nodegroup with Lauch Template (idempotency)(check mode)
+  aws_eks_nodegroup:
+    name: '{{ eks_nodegroup_name_lt }}'
+    state: present
+    cluster_name: '{{ eks_cluster_name }}'
+    node_role: '{{ node_role }}'
+    subnets: >-
+      {{setup_subnets.results|selectattr('subnet.tags.Name', 'contains',
+      'private') | map(attribute='subnet.id') }}
+    launch_template:
+      name: 'Test-EKS-LT'
+    wait: True
+  register: aws_eks_non_existent_eks
+  check_mode: True
+
+- name: check that aws_eks_nodegroup is not changed (idempotency)(check mode)
+  assert:
+    that:
+      - not aws_eks_non_existent_eks.changed
+
+- name: create nodegroup with Lauch Template (idempotency)
+  aws_eks_nodegroup:
+    name: '{{ eks_nodegroup_name_lt }}'
+    state: present
+    cluster_name: '{{ eks_cluster_name }}'
+    node_role: '{{ node_role }}'
+    subnets: >-
+      {{setup_subnets.results|selectattr('subnet.tags.Name', 'contains',
+      'private') | map(attribute='subnet.id') }}
+    launch_template:
+      name: 'Test-EKS-LT'
+    wait: True
+  register: aws_eks_non_existent_eks
+  check_mode: True
+
+- name: check that aws_eks_nodegroup is not changed (idempotency)
+  assert:
+    that:
+      - not aws_eks_non_existent_eks.changed
+
+#########################################################
+## DELETE WITH WAIT
+
+- name: delete nodegroup witn minimum parameters (check mode)
+  aws_eks_nodegroup:
+    name: '{{ eks_nodegroup_name_a }}'
+    state: absent
+    cluster_name: '{{ eks_cluster_name }}'
+    node_role: '{{ node_role }}'
+    wait: True
+  register: aws_eks_non_existent_eks
+  check_mode: True
+
+- name: check that aws_eks_nodegroup is delete (check mode)
+  assert:
+    that:
+      - aws_eks_non_existent_eks.changed
+
+- name: delete nodegroup witn minimum parameters
+  aws_eks_nodegroup:
+    name: '{{ eks_nodegroup_name_a }}'
+    state: absent
+    cluster_name: '{{ eks_cluster_name }}'
+    wait: True
+  register: aws_eks_non_existent_eks
+
+- name: check that aws_eks_nodegroup is deleted
+  assert:
+    that:
+      - aws_eks_non_existent_eks.changed
+
+- name: delete nodegroup witn minimum parameters (idempotency)(check mode)
+  aws_eks_nodegroup:
+    name: '{{ eks_nodegroup_name_a }}'
+    state: absent
+    cluster_name: '{{ eks_cluster_name }}'
+    wait: True
+  register: aws_eks_non_existent_eks
+  check_mode: True
+
+- name: check that aws_eks_nodegroup is not changed (idempotency)(check mode)
+  assert:
+    that:
+      - not aws_eks_non_existent_eks.changed
+
+- name: delete nodegroup witn minimum parameters (idempotency)
+  aws_eks_nodegroup:
+    name: '{{ eks_nodegroup_name_a }}'
+    state: absent
+    cluster_name: '{{ eks_cluster_name }}'
+    wait: True
+  register: aws_eks_non_existent_eks
+  check_mode: True
+
+- name: check that aws_eks_nodegroup is not changed (idempotency)
+  assert:
+    that:
+      - not aws_eks_non_existent_eks.changed

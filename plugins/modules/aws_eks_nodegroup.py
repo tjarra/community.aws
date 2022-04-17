@@ -3,6 +3,7 @@
 # GNU General Public License v3.0+ (see COPYING or https://www.gnu.org/licenses/gpl-3.0.txt)
 
 from __future__ import (absolute_import, division, print_function)
+from email.policy import default
 __metaclass__ = type
 
 
@@ -352,7 +353,9 @@ def validate_taints(client, module, nodegroup, param_taints):
     params = dict()
     params['clusterName'] = nodegroup['clusterName']
     params['nodegroupName'] = nodegroup['nodegroupName']
-    params['taints'] = {}
+    params['taints'] = []
+    if 'taints' not in nodegroup:
+        nodegroup['taints'] = []
     taints_to_add_or_update, taints_to_unset = compare_taints(nodegroup['taints'], param_taints)
 
     if taints_to_add_or_update:
@@ -416,7 +419,7 @@ def create_or_update_nodegroups(client, module):
     params['subnets'] = module.params['subnets']
 
     if module.params['ami_type'] is not None:
-       params['amiType'] = module.params['ami_type']
+        params['amiType'] = module.params['ami_type']
     if module.params['disk_size'] is not None:
         params['diskSize'] = module.params['disk_size']
     if module.params['instance_types'] is not None:
@@ -453,23 +456,23 @@ def create_or_update_nodegroups(client, module):
             changed = True
             try:
                 update_params = dict()
-                update_params['clusterName'] = module.params['cluster_name'],
-                update_params['nodegroupName'] = module.params.get['name'],
-                update_params['scalingConfig'] = module.params['scaling_config'],
-                update_params['updateConfig'] = module.params['update_config']
+                update_params['clusterName'] = params['clusterName'],
+                update_params['nodegroupName'] = params['nodegroupName'],
+                update_params['scalingConfig'] = params['scalingConfig'],
+                update_params['updateConfig'] = params['updateConfig']
 
                 nodegroup = client.update_nodegroup_config(**update_params)
             except (botocore.exceptions.BotoCoreError, botocore.exceptions.ClientError) as e:
                 module.fail_json_aws(e, msg="Couldn't update nodegroup")
 
         changed |= validate_tags(client, module, nodegroup)
+        
+        changed |= validate_taints(client, module, nodegroup, params['taints'])
 
-        changed |= validate_taints(client, module, nodegroup['taints'], params['taints'])
-
-        changed |= validate_labels(client, module, nodegroup['labels'], params['labels'])
+        changed |= validate_labels(client, module, nodegroup, params['labels'])
 
         if wait:
-            wait_until(client, module, 'fargate_profile_active', params['nodegroupName'], params['clusterName'])
+            wait_until(client, module, 'nodegroup_active', params['nodegroupName'], params['clusterName'])
             nodegroup = get_nodegroup(client, module, params['nodegroupName'], params['clusterName'])
 
         module.exit_json(changed=changed, **camel_dict_to_snake_dict(nodegroup))
@@ -490,7 +493,7 @@ def create_or_update_nodegroups(client, module):
 
 
 def compare_params(client, module, params, nodegroup):
-    # First, validating the params that cannot be modified
+    # First, validating the parameters that cannot be modified
     if nodegroup['nodeRole'] != params['nodeRole']:
         module.fail_json(msg="Cannot modify Execution Role")
     if nodegroup['subnets'] != params['subnets']:
@@ -501,13 +504,20 @@ def compare_params(client, module, params, nodegroup):
         module.fail_json(msg="Cannot modify Instance Type")
     if nodegroup['amiType'] != params['amiType']:
         module.fail_json(msg="Cannot modify AMI Type")
-    if nodegroup['remoteAccess'] != params['remoteAccess']:
+    if ('remoteAccess' in nodegroup ) and ('remoteAccess' in params):
+        if (nodegroup['remoteAccess'] != params['remoteAccess']):
+            module.fail_json(msg="Cannot modify remote access configuration")
+    elif (('remoteAccess' not in nodegroup) and ('remoteAccess' in params)) or (('remoteAccess' in nodegroup) and ('remoteAccess' not in params)):
         module.fail_json(msg="Cannot modify remote access configuration")
     if nodegroup['capacityType'] != params['capacityType']:
         module.fail_json(msg="Cannot modify capacity type")
-    if nodegroup['releaseVersion'] != params['releaseVersion']:
-        module.fail_json(msg="Cannot modify release version")
-    if nodegroup['launch_template'] != params['launch_template']:
+    if params['releaseVersion'] != '':
+        if nodegroup['releaseVersion'] != params['releaseVersion']:
+            module.fail_json(msg="Cannot modify release version")
+    if 'launch_template' in nodegroup and 'launch_template' in params:
+        if nodegroup['launch_template'] != params['launch_template']:
+            module.fail_json(msg="Cannot modify Launch template configuration")
+    elif (('launch_template' not in nodegroup) and ('launch_template' in params)) or (('launch_template' in nodegroup) and ('launch_template' not in params)):
         module.fail_json(msg="Cannot modify Launch template configuration")
     ###
     if nodegroup['updateConfig'] != params['updateConfig']:
@@ -523,15 +533,15 @@ def delete_nodegroups(client, module):
     existing = get_nodegroup(client, module, name, clusterName)
     wait = module.params.get('wait')
     if not existing:
-        module.exit_json(changed=False)
+        module.exit_json(changed=False, msg='Nodegroup not exists')
     if not module.check_mode:
         try:
             client.delete_nodegroup(clusterName=clusterName, nodegroupName=name)
         except (botocore.exceptions.BotoCoreError, botocore.exceptions.ClientError) as e:
             module.fail_json_aws(e, msg="Couldn't delete Nodegroup %s" % name)
 
-    if wait:
-        wait_until(client, module, 'nodegroup_deleted', name, clusterName)
+        if wait:
+            wait_until(client, module, 'nodegroup_deleted', name, clusterName)
 
     module.exit_json(changed=True)
 
@@ -556,10 +566,15 @@ def main():
         cluster_name=dict(required=True),
         node_role=dict(),
         subnets=dict(type='list', elements='str'),
-        scaling_config=dict(type='dict', options=dict(
-            min_size=dict(type='int'),
-            max_size=dict(type='int'),
-            desired_size=dict(type='int')
+        scaling_config=dict(type='dict', default={
+                'min_size': 1,
+                'max_size': 2,
+                'desired_size': 1
+            },
+            options=dict(
+                min_size=dict(type='int'),
+                max_size=dict(type='int'),
+                desired_size=dict(type='int')
         )),
         disk_size=dict(type='int'),
         instance_types=dict(type='list', elements='str'),
@@ -568,19 +583,22 @@ def main():
             ec2_ssh_key=dict(no_log=True),
             source_sg=dict(type='list', elements='str')
         )),
-        update_config=dict(type='dict', options=dict(
+        update_config=dict(type='dict', default={
+                'max_unavailable': 1
+            },
+            options=dict(
             max_unavailable=dict(type='int'),
             max_unavailable_percentage=dict(type='int'),
         )),
-        labels=dict(type='dict'),
-        taints=dict(type='list', elements='dict'),
+        labels=dict(type='dict', default={}),
+        taints=dict(type='list', elements='dict', default=[]),
         launch_template=dict(type='dict', options=dict(
             name=dict(type='str'),
             version=dict(type='str'),
             id=dict(type='str')
         )),
         capacity_type=dict(choices=['on_demand', 'spot'], default='on_demand'),
-        release_version=dict(),
+        release_version=dict(default=''),
         tags=dict(type='dict', default={}),
         purge_tags=dict(type='bool', default=True),
         state=dict(choices=['absent', 'present'], default='present'),
@@ -592,13 +610,21 @@ def main():
         argument_spec=argument_spec,
         required_if=[['state', 'present', ['node_role', 'subnets']]],
         mutually_exclusive=[
-          ('launch_template','instance_types'),
-          ('launch_template','disk_size'),
-          ('launch_template','remote_access'),
-          ("update_config['max_unavailable']","update_config['max_unavailable_percentage']")
-          ],
+            ('launch_template', 'instance_types'),
+            ('launch_template', 'disk_size'),
+            ('launch_template', 'remote_access'),
+            ('launch_template', 'ami_type')
+        ],
         supports_check_mode=True,
     )
+    
+    if module.params['launch_template'] is None:
+        if module.params['disk_size'] is None:
+            module.params['disk_size'] = 20
+        if module.params['ami_type'] is None:
+            module.params['ami_type'] = "AL2_x86_64"
+        if module.params['instance_types'] is None:
+            module.params['instance_types'] = ["t3.medium"]
 
     client = module.client('eks')
 

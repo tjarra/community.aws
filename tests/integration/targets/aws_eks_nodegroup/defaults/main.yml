@@ -1,6 +1,6 @@
 eks_cluster_name: "{{ resource_prefix }}"
 eks_nodegroup_name_a: ng-template-a
-eks_nodegroup_name_b: ng-template-b
+eks_nodegroup_name_lt: ng-template-lt
 
 eks_subnets:
   - zone: a
