@@ -314,7 +314,7 @@ except ImportError:
 def validate_tags(client, module, nodegroup):
 
     changed = False
-    existing_tags = client.list_tags_for_resource(resourceArn=nodegroup['nodegroupArn'])
+    existing_tags = client.list_tags_for_resource(resourceArn=nodegroup['nodegroupArn'])['tags']
     tags_to_add, tags_to_remove = compare_aws_tags(existing_tags, module.params.get('tags'), module.params.get('purge_tags'))
 
     if tags_to_remove:
@@ -425,7 +425,13 @@ def create_or_update_nodegroups(client, module):
     if module.params['instance_types'] is not None:
         params['instanceTypes'] = module.params['instance_types']
     if module.params['launch_template'] is not None:
-        params['launch_template'] = module.params['launch_template']
+        params['launchTemplate'] = module.params['launch_template']
+        if params['launchTemplate']['id'] is None:
+            del params['launchTemplate']['id']
+        if params['launchTemplate']['name'] is None:
+            del params['launchTemplate']['name']
+        if params['launchTemplate']['version'] is None:
+            del params['launchTemplate']['version']
     if module.params['release_version'] is not None:
         params['releaseVersion'] = module.params['release_version']
     if module.params['remote_access'] is not None:
@@ -452,28 +458,33 @@ def create_or_update_nodegroups(client, module):
 
     if nodegroup:
 
-        if compare_params(client, module, params, nodegroup):
-            changed = True
+        if compare_params(client, module, params, nodegroup):          
             try:
                 update_params = dict()
-                update_params['clusterName'] = params['clusterName'],
-                update_params['nodegroupName'] = params['nodegroupName'],
-                update_params['scalingConfig'] = params['scalingConfig'],
+                update_params['clusterName'] = params['clusterName']
+                update_params['nodegroupName'] = params['nodegroupName']
+                update_params['scalingConfig'] = params['scalingConfig']
                 update_params['updateConfig'] = params['updateConfig']
 
-                nodegroup = client.update_nodegroup_config(**update_params)
+                if not module.check_mode:                
+                    client.update_nodegroup_config(**update_params)
+                
+                changed |= True
+                
             except (botocore.exceptions.BotoCoreError, botocore.exceptions.ClientError) as e:
                 module.fail_json_aws(e, msg="Couldn't update nodegroup")
-
+        
         changed |= validate_tags(client, module, nodegroup)
         
-        changed |= validate_taints(client, module, nodegroup, params['taints'])
+        if 'taints' in nodegroup:
+            changed |= validate_taints(client, module, nodegroup, params['taints'])
 
         changed |= validate_labels(client, module, nodegroup, params['labels'])
 
         if wait:
             wait_until(client, module, 'nodegroup_active', params['nodegroupName'], params['clusterName'])
-            nodegroup = get_nodegroup(client, module, params['nodegroupName'], params['clusterName'])
+        
+        nodegroup = get_nodegroup(client, module, params['nodegroupName'], params['clusterName'])
 
         module.exit_json(changed=changed, **camel_dict_to_snake_dict(nodegroup))
 
@@ -511,13 +522,12 @@ def compare_params(client, module, params, nodegroup):
         module.fail_json(msg="Cannot modify remote access configuration")
     if nodegroup['capacityType'] != params['capacityType']:
         module.fail_json(msg="Cannot modify capacity type")
-    if params['releaseVersion'] != '':
-        if nodegroup['releaseVersion'] != params['releaseVersion']:
-            module.fail_json(msg="Cannot modify release version")
-    if 'launch_template' in nodegroup and 'launch_template' in params:
-        if nodegroup['launch_template'] != params['launch_template']:
+    if nodegroup['releaseVersion'] != params['releaseVersion']:
+        module.fail_json(msg="Cannot modify release version")
+    if 'launch_template' in nodegroup and 'launchTemplate' in params:
+        if nodegroup['launch_template'] != params['launchTemplate']:
             module.fail_json(msg="Cannot modify Launch template configuration")
-    elif (('launch_template' not in nodegroup) and ('launch_template' in params)) or (('launch_template' in nodegroup) and ('launch_template' not in params)):
+    elif (('launch_template' not in nodegroup) and ('launchTemplate' in params)) or (('launch_template' in nodegroup) and ('launchTemplate' not in params)):
         module.fail_json(msg="Cannot modify Launch template configuration")
     ###
     if nodegroup['updateConfig'] != params['updateConfig']:
@@ -532,8 +542,8 @@ def delete_nodegroups(client, module):
     clusterName = module.params['cluster_name']
     existing = get_nodegroup(client, module, name, clusterName)
     wait = module.params.get('wait')
-    if not existing:
-        module.exit_json(changed=False, msg='Nodegroup not exists')
+    if not existing or existing['status'] == 'DELETING':
+        module.exit_json(changed=False, msg='Nodegroup not exists or in DELETING status.')
     if not module.check_mode:
         try:
             client.delete_nodegroup(clusterName=clusterName, nodegroupName=name)
@@ -562,8 +572,8 @@ def wait_until(client, module, waiter_name, nodegroup_name, cluster_name):
 
 def main():
     argument_spec = dict(
-        name=dict(required=True),
-        cluster_name=dict(required=True),
+        name=dict(type='str', required=True),
+        cluster_name=dict(type='str', required=True),
         node_role=dict(),
         subnets=dict(type='list', elements='str'),
         scaling_config=dict(type='dict', default={
@@ -598,7 +608,7 @@ def main():
             id=dict(type='str')
         )),
         capacity_type=dict(choices=['on_demand', 'spot'], default='on_demand'),
-        release_version=dict(default=''),
+        release_version=dict(),
         tags=dict(type='dict', default={}),
         purge_tags=dict(type='bool', default=True),
         state=dict(choices=['absent', 'present'], default='present'),

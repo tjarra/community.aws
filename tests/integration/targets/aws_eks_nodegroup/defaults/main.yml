@@ -6,11 +6,9 @@ eks_subnets:
   - zone: a
     cidr: 10.0.1.0/24
     type: private
-    tag: internal-elb
   - zone: b
     cidr: 10.0.2.0/24
     type: public
-    tag: elbs
 
 eks_security_groups:
   - name: "{{ eks_cluster_name }}-control-plane-sg"

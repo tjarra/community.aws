@@ -23,9 +23,10 @@
 - name: create subnets
   ec2_vpc_subnet:
     az: '{{ aws_region }}{{ item.zone }}'
-    tags: '{ "Name": "{{ resource_prefix }}_aws_eks-subnet-{{ item.type }}-{{ item.zone }}", "kubernetes.io/role/{{ item.tag }}": "1" }'
+    tags: '{ "Name": "{{ resource_prefix }}_aws_eks-subnet-{{ item.type }}-{{ item.zone }}" }'
     vpc_id: '{{ setup_vpc.vpc.id }}'
     cidr: '{{ item.cidr }}'
+    map_public: 'yes'
     state: present
   register: setup_subnets
   with_items:
@@ -43,33 +44,12 @@
   community.aws.ec2_vpc_route_table:
     vpc_id: '{{ setup_vpc.vpc.id }}'
     tags:
-      Name: Public
-    subnets: '{{ setup_subnets.results|selectattr(''subnet.tags.Name'', ''contains'', ''public'') | map(attribute=''subnet.id'') }}'
+      Name: EKS
+    subnets: '{{ setup_subnets.results | map(attribute=''subnet.id'') }}'
     routes:
       - dest: 0.0.0.0/0
         gateway_id: '{{ setup_igw.gateway_id }}'
   register: public_route_table
-
-- name: create Natgateway
-  amazon.aws.ec2_vpc_nat_gateway:
-    if_exist_do_not_create: yes
-    state: present
-    subnet_id: '{{ (setup_subnets.results|selectattr(''subnet.tags.Name'', ''contains'', ''public'') | map(attribute=''subnet.id''))[0] }}'
-    wait: true
-    tags:
-      Name: '{{ resource_prefix }}_NAT'
-  register: setup_nat_gateway
-
-- name: Set up NAT-protected route table
-  community.aws.ec2_vpc_route_table:
-    vpc_id: '{{ setup_vpc.vpc.id }}'
-    tags:
-      Name: Internal
-    subnets: '{{setup_subnets.results|selectattr(''subnet.tags.Name'', ''contains'', ''private'') | map(attribute=''subnet.id'') }}'
-    routes:
-      - dest: 0.0.0.0/0
-        nat_gateway_id: '{{ setup_nat_gateway.nat_gateway_id }}'
-  register: nat_route_table
 
 - name: create security groups to use for EKS
   ec2_group:
