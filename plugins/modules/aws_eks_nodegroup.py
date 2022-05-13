@@ -10,25 +10,25 @@ __metaclass__ = type
 DOCUMENTATION = r'''
 ---
 module: aws_eks_nodegroup
-version_added: 3.2.0
-short_description: Manage EKS Nodegroup
+version_added: 4.0.0
+short_description: Manage EKS Nodegroup module
 description:
     - Manage EKS Nodegroup
 author: Tiago Jarra (@tjarra)
 options:
   name:
-    description: Name of EKS Nodegroup
+    description: Name of EKS Nodegroup.
     required: True
     type: str
   cluster_name:
-    description: Name of EKS Cluster
+    description: Name of EKS Cluster.
     required: True
     type: str
   node_role:
-    description: ARN of IAM role used by the EKS cluster Nodegroup
+    description: ARN of IAM role used by the EKS cluster Nodegroup.
     type: str
   subnets:
-    description: list of subnet IDs for the Kubernetes cluster
+    description: list of subnet IDs for the Kubernetes cluster.
     type: list
     elements: str
   scaling_config:
@@ -45,14 +45,14 @@ options:
         description: The current number of nodes that the managed node group should maintain.
         type: int
   disk_size:
-    description: Size of disk in nodegroup nodes
+    description: Size of disk in nodegroup nodes.
     type: int
   instance_types:
     description: Specify the instance types for a node group.
     type: list
     elements: str
   ami_type:
-    description: The AMI type for your node group
+    description: The AMI type for your node group.
     type: str
     choices:
       - AL2_x86_64
@@ -66,10 +66,10 @@ options:
     type: dict
     suboptions:
       ec2_ssh_key:
-        description: The Amazon EC2 SSH key that provides access for SSH communication with the nodes in the managed node group
+        description: The Amazon EC2 SSH key that provides access for SSH communication with the nodes in the managed node group.
         type: str
       source_sg:
-        description: The security groups that are allowed SSH access (port 22) to the nodes
+        description: The security groups that are allowed SSH access (port 22) to the nodes.
         type: list
         elements: str
   update_config:
@@ -103,11 +103,11 @@ options:
     description: The metadata to apply to the node group to assist with categorization and organization.
     type: dict
   purge_tags:
-    description: Purge or not tags if not describe
+    description: Purge or not tags if not describe.
     type: bool
     default: True
   state:
-    description: Create or delete the Fargate Profile
+    description: Create or delete the Fargate Profile.
     choices:
       - absent
       - present
@@ -184,22 +184,22 @@ version:
   type: str
   sample: need_validate
 release_version:
-  description: This is the version of the Amazon EKS optimized AMI that the node group was deployed with
+  description: This is the version of the Amazon EKS optimized AMI that the node group was deployed with.
   returned: when state is present
   type: str
   sample: need_validate
 created_at:
-  description: Nodegroup creation date and time
+  description: Nodegroup creation date and time.
   returned: when state is present
   type: str
   sample: '2022-01-18T20:00:00.111000+00:00'
 modified_at:
-  description: Nodegroup modified date and time
+  description: Nodegroup modified date and time.
   returned: when state is present
   type: str
   sample: '2022-01-18T20:00:00.111000+00:00'
 status:
-  description: status of the EKS Fargate Profile
+  description: status of the EKS Nodegroup.
   returned: when state is present
   type: str
   sample:
@@ -221,7 +221,7 @@ instance_types:
   type: list
   sample: need_validate
 subnets:
-  description: List of subnets used in Fargate Profile
+  description: List of subnets used in Fargate Profile.
   returned: when state is present
   type: list
   sample:
@@ -238,7 +238,7 @@ ami_type:
   type: str
   sample: need_validate
 node_role:
-  description: ARN of the IAM Role used by Nodegroup
+  description: ARN of the IAM Role used by Nodegroup.
   returned: when state is present
   type: str
   sample: arn:aws:eks:us-east-1:1231231123:role/asdf
@@ -293,7 +293,7 @@ lauch_template:
   type: dict
   sample: need_validate
 tags:
-  description: Nodegroup tags
+  description: Nodegroup tags.
   returned: when state is present
   type: dict
   sample:
@@ -504,36 +504,34 @@ def create_or_update_nodegroups(client, module):
 
 
 def compare_params(client, module, params, nodegroup):
-    # First, validating the parameters that cannot be modified
-    if nodegroup['nodeRole'] != params['nodeRole']:
-        module.fail_json(msg="Cannot modify Execution Role")
-    if nodegroup['subnets'] != params['subnets']:
-        module.fail_json(msg="Cannot modify Subnets")
-    if nodegroup['diskSize'] != params['diskSize']:
-        module.fail_json(msg="Cannot modify Disk size")
-    if nodegroup['instanceTypes'] != params['instanceTypes']:
-        module.fail_json(msg="Cannot modify Instance Type")
-    if nodegroup['amiType'] != params['amiType']:
-        module.fail_json(msg="Cannot modify AMI Type")
-    if ('remoteAccess' in nodegroup ) and ('remoteAccess' in params):
-        if (nodegroup['remoteAccess'] != params['remoteAccess']):
-            module.fail_json(msg="Cannot modify remote access configuration")
-    elif (('remoteAccess' not in nodegroup) and ('remoteAccess' in params)) or (('remoteAccess' in nodegroup) and ('remoteAccess' not in params)):
-        module.fail_json(msg="Cannot modify remote access configuration")
-    if nodegroup['capacityType'] != params['capacityType']:
-        module.fail_json(msg="Cannot modify capacity type")
-    if nodegroup['releaseVersion'] != params['releaseVersion']:
-        module.fail_json(msg="Cannot modify release version")
-    if 'launch_template' in nodegroup and 'launchTemplate' in params:
-        if nodegroup['launch_template'] != params['launchTemplate']:
-            module.fail_json(msg="Cannot modify Launch template configuration")
-    elif (('launch_template' not in nodegroup) and ('launchTemplate' in params)) or (('launch_template' in nodegroup) and ('launchTemplate' not in params)):
-        module.fail_json(msg="Cannot modify Launch template configuration")
-    ###
+    list_not_modify_parameters=['nodeRole', 'subnets', 'diskSize', 'instanceTypes', 'amiTypes', 'remoteAccess', 'capacityType']
+    for param in list_not_modify_parameters:
+        not_modify_parameters(module, nodegroup, params, param)
     if nodegroup['updateConfig'] != params['updateConfig']:
         return True
     if nodegroup['scalingConfig'] != params['scalingConfig']:
         return True
+    return False
+
+
+def not_modify_parameters(module, nodegroup, params, param_name):
+    if (param_name in nodegroup ) and (param_name in params):
+        if (nodegroup[param_name] != params[param_name]):
+            module.fail_json(msg="Cannot modify parameter %s." % param_name)
+    elif ((param_name not in nodegroup) and (param_name in params)) or ((param_name in nodegroup) and (param_name not in params)):
+        module.fail_json(msg="Cannot modify parameter %s." % param_name)
+
+
+def compare_params_launch_template(module, params, nodegroup):
+    if 'launch_template' in nodegroup and 'launchTemplate' in params:
+        new_params = []
+        lt_params = ['name', 'id', 'version']
+        for param in lt_params:
+            if param in params['launchTemplate']:
+                if params['launchTemplate'][param] != nodegroup['launchTemplate'][param]:
+                    new_params[param] = params['launchTemplate'][param]
+        if len(new_params) > 0:
+            return True
     return False
 
 
@@ -548,7 +546,7 @@ def delete_nodegroups(client, module):
         try:
             client.delete_nodegroup(clusterName=clusterName, nodegroupName=name)
         except (botocore.exceptions.BotoCoreError, botocore.exceptions.ClientError) as e:
-            module.fail_json_aws(e, msg="Couldn't delete Nodegroup %s" % name)
+            module.fail_json_aws(e, msg="Couldn't delete Nodegroup %s." % name)
 
         if wait:
             wait_until(client, module, 'nodegroup_deleted', name, clusterName)
