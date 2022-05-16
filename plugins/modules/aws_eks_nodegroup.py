@@ -287,7 +287,7 @@ update_config:
     maxUnavailablePercentage:
       description: The maximum percentage of nodes unavailable during a version update.
       type: int
-lauch_template:
+launch_template:
   description: If a launch template was used to create the node group, then this is the launch template that was used.
   returned: when state is present
   type: dict
@@ -409,6 +409,32 @@ def validate_labels(client, module, nodegroup, param_labels):
     return changed
 
 
+def compare_params(module, params, nodegroup):
+    for param in ['nodeRole', 'subnets', 'diskSize', 'instanceTypes', 'amiTypes', 'remoteAccess', 'capacityType']:
+        if (param in nodegroup ) and (param in params):
+            if (nodegroup[param] != params[param]):
+                module.fail_json(msg="Cannot modify parameter %s." % param)
+    if ('launchTemplate' not in nodegroup) and ('launchTemplate'  in params):
+        module.fail_json(msg="Cannot add Launch Template in this Nodegroup.")
+    if nodegroup['updateConfig'] != params['updateConfig']:
+        return True
+    if nodegroup['scalingConfig'] != params['scalingConfig']:
+        return True
+    return False
+
+
+def compare_params_launch_template(module, params, nodegroup):
+    if 'launchTemplate' not in params:
+        module.fail_json(msg="Cannot exclude Launch Template in this Nodegroup")
+    else:
+        for key in ['name', 'id']:
+            if ( key in params['launchTemplate']) and (params['launchTemplate'][key] != nodegroup['launchTemplate'][key]):
+                module.fail_json(msg="Cannot modify Launch Template %s." % key)
+        if ('version' in params['launchTemplate']) and (params['launchTemplate']['version'] != nodegroup['launchTemplate']['version']):
+            return True
+    return False
+
+
 def create_or_update_nodegroups(client, module):
 
     changed = False
@@ -457,12 +483,23 @@ def create_or_update_nodegroups(client, module):
     nodegroup = get_nodegroup(client, module, params['nodegroupName'], params['clusterName'])
 
     if nodegroup:
+        update_params = dict()
+        update_params['clusterName'] = params['clusterName']
+        update_params['nodegroupName'] = params['nodegroupName']
+        
+        if 'launchTemplate' in nodegroup:
+            if compare_params_launch_template(module, params, nodegroup):        
+                update_params['launchTemplate'] = params['launchTemplate']        
+                if not module.check_mode:
+                    try:
+                        client.update_nodegroup_version(**update_params)
+                    except (botocore.exceptions.BotoCoreError, botocore.exceptions.ClientError) as e:
+                        module.fail_json_aws(e, msg="Couldn't update nodegroup")
+                changed |= True
 
-        if compare_params(client, module, params, nodegroup):          
+        if compare_params(module, params, nodegroup):          
             try:
-                update_params = dict()
-                update_params['clusterName'] = params['clusterName']
-                update_params['nodegroupName'] = params['nodegroupName']
+                if 'launchTemplate' in update_params: update_params.pop('launchTemplate')
                 update_params['scalingConfig'] = params['scalingConfig']
                 update_params['updateConfig'] = params['updateConfig']
 
@@ -501,38 +538,6 @@ def create_or_update_nodegroups(client, module):
         nodegroup = get_nodegroup(client, module, params['nodegroupName'], params['clusterName'])
 
     module.exit_json(changed=True, **camel_dict_to_snake_dict(nodegroup))
-
-
-def compare_params(client, module, params, nodegroup):
-    list_not_modify_parameters=['nodeRole', 'subnets', 'diskSize', 'instanceTypes', 'amiTypes', 'remoteAccess', 'capacityType']
-    for param in list_not_modify_parameters:
-        not_modify_parameters(module, nodegroup, params, param)
-    if nodegroup['updateConfig'] != params['updateConfig']:
-        return True
-    if nodegroup['scalingConfig'] != params['scalingConfig']:
-        return True
-    return False
-
-
-def not_modify_parameters(module, nodegroup, params, param_name):
-    if (param_name in nodegroup ) and (param_name in params):
-        if (nodegroup[param_name] != params[param_name]):
-            module.fail_json(msg="Cannot modify parameter %s." % param_name)
-    elif ((param_name not in nodegroup) and (param_name in params)) or ((param_name in nodegroup) and (param_name not in params)):
-        module.fail_json(msg="Cannot modify parameter %s." % param_name)
-
-
-def compare_params_launch_template(module, params, nodegroup):
-    if 'launch_template' in nodegroup and 'launchTemplate' in params:
-        new_params = []
-        lt_params = ['name', 'id', 'version']
-        for param in lt_params:
-            if param in params['launchTemplate']:
-                if params['launchTemplate'][param] != nodegroup['launchTemplate'][param]:
-                    new_params[param] = params['launchTemplate'][param]
-        if len(new_params) > 0:
-            return True
-    return False
 
 
 def delete_nodegroups(client, module):
@@ -633,6 +638,9 @@ def main():
             module.params['ami_type'] = "AL2_x86_64"
         if module.params['instance_types'] is None:
             module.params['instance_types'] = ["t3.medium"]
+    else:
+        if (module.params['launch_template']['id'] is None) and (module.params['launch_template']['name'] is None):
+            module.exit_json(changed=False, msg='To use launch_template, it is necessary to inform the id or name')
 
     client = module.client('eks')
 
