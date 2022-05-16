@@ -314,7 +314,7 @@ def build_rule(client, module):
             t_out = dict()
             if transition.get('transition_date'):
                 t_out['Date'] = transition['transition_date']
-            elif transition.get('transition_days'):
+            elif transition.get('transition_days') is not None:
                 t_out['Days'] = transition['transition_days']
             if transition.get('storage_class'):
                 t_out['StorageClass'] = transition['storage_class'].upper()
@@ -485,15 +485,23 @@ def create_lifecycle_rule(client, module):
 
     _changed = changed
     _retries = 10
-    while wait and _changed and _retries:
+    _not_changed_cnt = 6
+    while wait and _changed and _retries and _not_changed_cnt:
         # We've seen examples where get_bucket_lifecycle_configuration returns
-        # the updated rules, then the old rules, then the updated rules again,
+        # the updated rules, then the old rules, then the updated rules again and
+        # again couple of times.
+        # Thus try to read the rule few times in a row to check if it has changed.
         time.sleep(5)
         _retries -= 1
         new_rules = fetch_rules(client, module, name)
         (_changed, lifecycle_configuration) = compare_and_update_configuration(client, module,
                                                                                new_rules,
                                                                                new_rule)
+        if not _changed:
+            _not_changed_cnt -= 1
+            _changed = True
+        else:
+            _not_changed_cnt = 6
 
     new_rules = fetch_rules(client, module, name)
 
@@ -531,13 +539,21 @@ def destroy_lifecycle_rule(client, module):
 
     _changed = changed
     _retries = 10
-    while wait and _changed and _retries:
+    _not_changed_cnt = 6
+    while wait and _changed and _retries and _not_changed_cnt:
         # We've seen examples where get_bucket_lifecycle_configuration returns
-        # the updated rules, then the old rules, then the updated rules again,
+        # the updated rules, then the old rules, then the updated rules again and
+        # again couple of times.
+        # Thus try to read the rule few times in a row to check if it has changed.
         time.sleep(5)
         _retries -= 1
         new_rules = fetch_rules(client, module, name)
         (_changed, lifecycle_configuration) = compare_and_remove_rule(new_rules, rule_id, prefix)
+        if not _changed:
+            _not_changed_cnt -= 1
+            _changed = True
+        else:
+            _not_changed_cnt = 6
 
     new_rules = fetch_rules(client, module, name)
 
@@ -596,7 +612,7 @@ def main():
                                  'noncurrent_version_transition_days',
                                  'noncurrent_version_transitions')
         for param in required_when_present:
-            if module.params.get(param):
+            if module.params.get(param) is None:
                 break
         else:
             msg = "one of the following is required when 'state' is 'present': %s" % ', '.join(required_when_present)

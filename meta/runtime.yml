@@ -66,6 +66,8 @@ action_groups:
   - ec2_asg
   - ec2_asg_info
   - ec2_asg_scheduled_action
+  - ec2_asg_instance_refresh
+  - ec2_asg_instance_refresh_info
   - ec2_asg_lifecycle_hook
   - ec2_customer_gateway
   - ec2_customer_gateway_info
@@ -84,13 +86,13 @@ action_groups:
   - ec2_snapshot_copy
   - ec2_transit_gateway
   - ec2_transit_gateway_info
+  - ec2_transit_gateway_vpc_attachment
+  - ec2_transit_gateway_vpc_attachment_info
   - ec2_vpc_egress_igw
   - ec2_vpc_nacl
   - ec2_vpc_nacl_info
   - ec2_vpc_peer
   - ec2_vpc_peering_info
-  - ec2_vpc_route_table
-  - ec2_vpc_route_table_info
   - ec2_vpc_vgw
   - ec2_vpc_vgw_info
   - ec2_vpc_vpn
@@ -108,6 +110,7 @@ action_groups:
   - efs
   - efs_info
   - efs_tag
+  - eks_fargate_profile
   - elasticache
   - elasticache_info
   - elasticache_parameter_group
@@ -147,6 +150,10 @@ action_groups:
   - lambda_info
   - lambda_policy
   - lightsail
+  - networkfirewall_policy
+  - networkfirewall_policy_info
+  - networkfirewall_rule_group
+  - networkfirewall_rule_group_info
   - rds_instance
   - rds_instance_info
   - rds_instance_snapshot
@@ -156,6 +163,8 @@ action_groups:
   - rds_snapshot
   - rds_snapshot_info
   - rds_subnet_group
+  - rds_cluster
+  - rds_cluster_info
   - redshift
   - redshift_cross_region_snapshots
   - redshift_info
@@ -172,6 +181,7 @@ action_groups:
   - s3_website
   - sns
   - sns_topic
+  - sns_topic_info
   - sqs_queue
   - sts_assume_role
   - sts_session_token
@@ -205,6 +215,10 @@ plugin_routing:
       redirect: amazon.aws.ec2_vpc_nat_gateway
     ec2_vpc_nat_gateway_info:
       redirect: amazon.aws.ec2_vpc_nat_gateway_info
+    ec2_vpc_route_table:
+      redirect: amazon.aws.ec2_vpc_route_table
+    ec2_vpc_route_table_info:
+       redirect: amazon.aws.ec2_vpc_route_table_info
     elb_classic_lb:
       redirect: amazon.aws.ec2_elb_lb
     iam_cert:

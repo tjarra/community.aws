@@ -49,13 +49,38 @@ options:
   deletion_protection:
     description:
       - Indicates whether deletion protection for the ALB is enabled.
-      - Defaults to C(false).
+      - Defaults to C(False).
     type: bool
   http2:
     description:
       - Indicates whether to enable HTTP2 routing.
-      - Defaults to C(false).
+      - Defaults to C(True).
     type: bool
+  http_desync_mitigation_mode:
+    description:
+      - Determines how the load balancer handles requests that might pose a security risk to an application.
+      - Defaults to C('defensive')
+    type: str
+    choices: ['monitor', 'defensive', 'strictest']
+    version_added: 3.2.0
+  http_drop_invalid_header_fields:
+    description:
+      - Indicates whether HTTP headers with invalid header fields are removed by the load balancer C(True) or routed to targets C(False).
+      - Defaults to C(False).
+    type: bool
+    version_added: 3.2.0
+  http_x_amzn_tls_version_and_cipher_suite:
+    description:
+      - Indicates whether the two headers are added to the client request before sending it to the target.
+      - Defaults to C(False).
+    type: bool
+    version_added: 3.2.0
+  http_xff_client_port:
+    description:
+      - Indicates whether the X-Forwarded-For header should preserve the source port that the client used to connect to the load balancer.
+      - Defaults to C(False).
+    type: bool
+    version_added: 3.2.0
   idle_timeout:
     description:
       - The number of seconds to wait before an idle connection is closed.
@@ -109,12 +134,14 @@ options:
                 Conditions:
                     type: list
                     description: Conditions which must be met for the actions to be applied.
+                    elements: dict
                 Priority:
                     type: int
                     description: The rule priority.
                 Actions:
                     type: list
                     description: Actions to apply if all of the rule's conditions are met.
+                    elements: dict
   name:
     description:
       - The name of the load balancer. This name must be unique within your AWS account, can have a maximum of 32 characters, must contain only alphanumeric
@@ -144,7 +171,7 @@ options:
     description:
       - A list of the names or IDs of the security groups to assign to the load balancer.
       - Required if I(state=present).
-    default: []
+      - If C([]), the VPC's default security group will be used.
     type: list
     elements: str
   scheme:
@@ -183,6 +210,12 @@ options:
       - Sets the type of IP addresses used by the subnets of the specified Application Load Balancer.
     choices: [ 'ipv4', 'dualstack' ]
     type: str
+  waf_fail_open:
+    description:
+      - Indicates whether to allow a AWS WAF-enabled load balancer to route requests to targets if it is unable to forward the request to AWS WAF.
+      - Defaults to C(False).
+    type: bool
+    version_added: 3.2.0
 extends_documentation_fragment:
 - amazon.aws.aws
 - amazon.aws.ec2
@@ -494,10 +527,16 @@ waf_fail_open_enabled:
     type: bool
     sample: false
 '''
+try:
+    import botocore
+except ImportError:
+    pass  # caught by AnsibleAWSModule
 
 from ansible_collections.amazon.aws.plugins.module_utils.core import AnsibleAWSModule
-from ansible_collections.amazon.aws.plugins.module_utils.ec2 import camel_dict_to_snake_dict
+from ansible_collections.amazon.aws.plugins.module_utils.ec2 import ansible_dict_to_boto3_filter_list
+from ansible_collections.amazon.aws.plugins.module_utils.ec2 import AWSRetry
 from ansible_collections.amazon.aws.plugins.module_utils.ec2 import boto3_tag_list_to_ansible_dict
+from ansible_collections.amazon.aws.plugins.module_utils.ec2 import camel_dict_to_snake_dict
 from ansible_collections.amazon.aws.plugins.module_utils.ec2 import compare_aws_tags
 from ansible_collections.amazon.aws.plugins.module_utils.elbv2 import (
     ApplicationLoadBalancer,
@@ -507,6 +546,29 @@ from ansible_collections.amazon.aws.plugins.module_utils.elbv2 import (
     ELBListeners,
 )
 from ansible_collections.amazon.aws.plugins.module_utils.elb_utils import get_elb_listener_rules
+
+
+@AWSRetry.jittered_backoff()
+def describe_sgs_with_backoff(connection, **params):
+    paginator = connection.get_paginator('describe_security_groups')
+    return paginator.paginate(**params).build_full_result()['SecurityGroups']
+
+
+def find_default_sg(connection, module, vpc_id):
+    """
+    Finds the default security group for the given VPC ID.
+    """
+    filters = ansible_dict_to_boto3_filter_list({'vpc-id': vpc_id, 'group-name': 'default'})
+    try:
+        sg = describe_sgs_with_backoff(connection, Filters=filters)
+    except (botocore.exceptions.ClientError, botocore.exceptions.BotoCoreError) as e:
+        module.fail_json_aws(e, msg='No default security group found for VPC {0}'.format(vpc_id))
+    if len(sg) == 1:
+        return sg[0]['GroupId']
+    elif len(sg) == 0:
+        module.fail_json(msg='No default security group found for VPC {0}'.format(vpc_id))
+    else:
+        module.fail_json(msg='Multiple security groups named "default" found for VPC {0}'.format(vpc_id))
 
 
 def create_or_update_alb(alb_obj):
@@ -524,6 +586,13 @@ def create_or_update_alb(alb_obj):
             if alb_obj.module.check_mode:
                 alb_obj.module.exit_json(changed=True, msg='Would have updated ALB if not in check mode.')
             alb_obj.modify_security_groups()
+
+        # ALB attributes
+        if not alb_obj.compare_elb_attributes():
+            if alb_obj.module.check_mode:
+                alb_obj.module.exit_json(changed=True, msg='Would have updated ALB if not in check mode.')
+            alb_obj.update_elb_attributes()
+            alb_obj.modify_elb_attributes()
 
         # Tags - only need to play with tags if tags parameter has been set to something
         if alb_obj.tags is not None:
@@ -548,10 +617,6 @@ def create_or_update_alb(alb_obj):
         if alb_obj.module.check_mode:
             alb_obj.module.exit_json(changed=True, msg='Would have created ALB if not in check mode.')
         alb_obj.create_elb()
-
-    # ALB attributes
-    alb_obj.update_elb_attributes()
-    alb_obj.modify_elb_attributes()
 
     # Listeners
     listeners_obj = ELBListeners(alb_obj.connection, alb_obj.module, alb_obj.elb['LoadBalancerArn'])
@@ -683,6 +748,10 @@ def main():
         access_logs_s3_prefix=dict(type='str'),
         deletion_protection=dict(type='bool'),
         http2=dict(type='bool'),
+        http_desync_mitigation_mode=dict(type='str', choices=['monitor', 'defensive', 'strictest']),
+        http_drop_invalid_header_fields=dict(type='bool'),
+        http_x_amzn_tls_version_and_cipher_suite=dict(type='bool'),
+        http_xff_client_port=dict(type='bool'),
         idle_timeout=dict(type='int'),
         listeners=dict(type='list',
                        elements='dict',
@@ -703,6 +772,7 @@ def main():
         scheme=dict(default='internet-facing', choices=['internet-facing', 'internal']),
         state=dict(choices=['present', 'absent'], default='present'),
         tags=dict(type='dict'),
+        waf_fail_open=dict(type='bool'),
         wait_timeout=dict(type='int'),
         wait=dict(default=False, type='bool'),
         purge_rules=dict(default=True, type='bool'),
@@ -737,6 +807,11 @@ def main():
     state = module.params.get("state")
 
     alb = ApplicationLoadBalancer(connection, connection_ec2, module)
+
+    # Update security group if default is specified
+    if alb.elb and module.params.get('security_groups') == []:
+        module.params['security_groups'] = [find_default_sg(connection_ec2, module, alb.elb['VpcId'])]
+        alb = ApplicationLoadBalancer(connection, connection_ec2, module)
 
     if state == 'present':
         create_or_update_alb(alb)
