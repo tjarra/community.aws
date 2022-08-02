@@ -1,3 +1,9 @@
+- name: remove launch template
+  ec2_launch_template:
+    name: "{{ resource_prefix }}-simple"
+    state: absent
+  ignore_errors: yes
+
 - name: remove EKS cluster
   aws_eks_cluster:
     name: '{{ eks_cluster_name }}'
@@ -39,14 +45,6 @@
     lookup: id
   with_items:
     - '{{ public_route_table.route_table.route_table_id }}'
-    - '{{ nat_route_table.route_table.route_table_id }}'
-
-- name: remove setup Nat Gateway
-  amazon.aws.ec2_vpc_nat_gateway:
-    state: absent
-    nat_gateway_id: '{{ setup_nat_gateway.nat_gateway_id}}'
-    release_eip: 'yes'
-    wait: 'yes'
 
 - name: remove setup subnet
   ec2_vpc_subnet:

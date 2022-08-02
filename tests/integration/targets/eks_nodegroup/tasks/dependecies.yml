@@ -1,4 +1,4 @@
-# Create a EKS Cluster to test Fargate Profile
+# Create a EKS Cluster to test Nodegroup
 # This space was a copy by aws_eks_cluster integration test
 - name: ensure IAM instance role exists
   iam_role:
@@ -75,3 +75,34 @@
   assert:
     that:
       - eks_create.name == eks_cluster_name
+
+# Dependecies to eks nodegroup
+- name: create IAM instance role 
+  iam_role:
+    name: 'ansible-test-eks_nodegroup'
+    assume_role_policy_document: '{{ lookup(''file'',''eks-nodegroup-trust-policy.json'') }}'
+    state: present
+    create_instance_profile: no
+    managed_policies:
+      - AmazonEKSWorkerNodePolicy
+      - AmazonEC2ContainerRegistryReadOnly
+      - AmazonEKS_CNI_Policy
+  register: iam_role_eks_nodegroup
+
+- name: Pause a few seconds to ensure IAM role is available to next task
+  pause:
+    seconds: 10
+
+# Dependecies to test eks nodegroup with launch_template
+- name: create instance template
+  ec2_launch_template:
+    name: "{{ resource_prefix }}-simple"
+    instance_type: t3.small
+  register: lt_default
+
+- name: update simple instance template
+  ec2_launch_template:
+    name: "{{ resource_prefix }}-simple"
+    default_version: 1
+    instance_type: t3.medium
+  register: lt

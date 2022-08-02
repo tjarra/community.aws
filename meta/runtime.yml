@@ -111,6 +111,7 @@ action_groups:
   - efs_info
   - efs_tag
   - eks_fargate_profile
+  - eks_nodegroup
   - elasticache
   - elasticache_info
   - elasticache_parameter_group

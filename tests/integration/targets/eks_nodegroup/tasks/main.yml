@@ -1,5 +1,5 @@
 ---
-- name: 'eks_cluster integration tests'
+- name: 'eks_nodegroup integration tests'
   collections:
     - amazon.aws
     - amozon.community
@@ -10,6 +10,7 @@
       security_token: '{{ security_token | default(omit) }}'
       region: '{{ aws_region }}'
   block:
-    - include_tasks: create_eks_cluster.yml
+    - include_tasks: dependecies.yml
     - include_tasks: full_test.yml
-    - include_tasks: cleanup_eks_cluster.yml
+  always:
+    - include_tasks: cleanup.yml
