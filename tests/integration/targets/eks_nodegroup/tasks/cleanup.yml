@@ -45,6 +45,7 @@
     lookup: id
   with_items:
     - '{{ public_route_table.route_table.route_table_id }}'
+  ignore_errors: 'yes'
 
 - name: remove setup subnet
   ec2_vpc_subnet:
@@ -59,6 +60,7 @@
   amazon.aws.ec2_vpc_igw:
     state: absent
     vpc_id: '{{ setup_vpc.vpc.id}}'
+  ignore_errors: 'yes'
     
 - name: remove setup VPC
   ec2_vpc_net:

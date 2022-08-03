@@ -649,7 +649,7 @@
 #########################################################
 ## DELETE WITH WAIT
 
-- name: delete nodegroup witn minimum parameters (check mode)
+- name: delete nodegroup with minimum parameters (check mode)
   eks_nodegroup:
     name: '{{ eks_nodegroup_name_a }}'
     state: absent
@@ -664,7 +664,7 @@
     that:
       - aws_eks_non_existent_eks.changed
 
-- name: delete nodegroup witn minimum parameters
+- name: delete nodegroup with minimum parameters
   eks_nodegroup:
     name: '{{ eks_nodegroup_name_a }}'
     state: absent
@@ -677,7 +677,7 @@
     that:
       - aws_eks_non_existent_eks.changed
 
-- name: delete nodegroup witn minimum parameters (idempotency)(check mode)
+- name: delete nodegroup with minimum parameters (idempotency)(check mode)
   eks_nodegroup:
     name: '{{ eks_nodegroup_name_a }}'
     state: absent

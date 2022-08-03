@@ -34,19 +34,20 @@ options:
   scaling_config:
     description: The scaling configuration details for the Auto Scaling group that is created for your node group.
     type: dict
+    default:
+      min_size: 1
+      max_size: 2
+      desired_size: 1
     suboptions:
       min_size:
         description: The minimum number of nodes that the managed node group can scale in to.
         type: int
-        default: 1
       max_size:
         description: The maximum number of nodes that the managed node group can scale out to.
         type: int
-        default: 2
       desired_size:
         description: The current number of nodes that the managed node group should maintain.
         type: int
-        default: 1
   disk_size:
     description:
       - Size of disk in nodegroup nodes.
@@ -84,11 +85,12 @@ options:
   update_config:
     description: The node group update configuration.
     type: dict
+    default:
+      max_unavailable: 1
     suboptions:
       max_unavailable:
         description: The maximum number of nodes unavailable at once during a version update.
         type: int
-        default: 1
       max_unavailable_percentage:
         description: The maximum percentage of nodes unavailable during a version update.
         type: int
@@ -629,10 +631,10 @@ def main():
         cluster_name=dict(type='str', required=True),
         node_role=dict(),
         subnets=dict(type='list', elements='str'),
-        scaling_config=dict(type='dict', options=dict(
-            min_size=dict(type='int', default=1),
-            max_size=dict(type='int', default=2),
-            desired_size=dict(type='int', default=1)
+        scaling_config=dict(type='dict', default={'min_size': 1, 'max_size': 2, 'desired_size': 1}, options=dict(
+            min_size=dict(type='int'),
+            max_size=dict(type='int'),
+            desired_size=dict(type='int')
         )),
         disk_size=dict(type='int'),
         instance_types=dict(type='list', elements='str'),
@@ -641,8 +643,8 @@ def main():
             ec2_ssh_key=dict(no_log=True),
             source_sg=dict(type='list', elements='str')
         )),
-        update_config=dict(type='dict', options=dict(
-            max_unavailable=dict(type='int', default=1),
+        update_config=dict(type='dict', default={'max_unavailable': 1}, options=dict(
+            max_unavailable=dict(type='int'),
             max_unavailable_percentage=dict(type='int')
         )),
         labels=dict(type='dict', default={}),
